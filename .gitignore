@@ -1,0 +1,13 @@
+# package directories
+node_modules
+jspm_packages
+
+# Serverless directories
+.serverless
+
+#Added by cargo
+#
+#already existing elements are commented out
+
+/target
+**/*.rs.bk

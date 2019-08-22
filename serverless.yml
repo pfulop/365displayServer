@@ -1,0 +1,16 @@
+service: service-365display
+provider:
+  name: aws
+  runtime: rust
+  logs:
+    websocket: true
+plugins:
+  - serverless-rust
+
+package:
+  individually: true
+functions:
+  test:
+    handler: display
+    events:
+      - websocket: $connect
