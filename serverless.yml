@@ -10,7 +10,15 @@ plugins:
 package:
   individually: true
 functions:
-  test:
+  connect:
     handler: display
     events:
       - websocket: $connect
+  disconnect:
+    handler: display
+    events:
+      - websocket: $disconnect
+  default:
+    handler: display
+    events:
+      - websocket: $default
