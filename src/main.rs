@@ -8,6 +8,7 @@ use log::{error, Level};
 use rusoto_core::RusotoError;
 use serde::{Deserialize, Serialize};
 use simple_logger;
+use std::env;
 use tokio::runtime::Runtime;
 
 mod models;
@@ -50,7 +51,7 @@ fn main() {
 }
 
 fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
-    // let table_name = env::var("tableName")?;
+    let table_name = env::var("tableName")?;
     let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let connection = models::Connection {
         id: event.request_context.connection_id,
@@ -63,6 +64,7 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
             let res = rt.block_on(
                 d_d_b
                     .put_item(PutItemInput {
+                        table_name,
                         item: connection.into(),
                         ..PutItemInput::default()
                     })
@@ -75,6 +77,7 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
             let res = rt.block_on(
                 d_d_b
                     .delete_item(DeleteItemInput {
+                        table_name,
                         key: connection.key(),
                         ..DeleteItemInput::default()
                     })
