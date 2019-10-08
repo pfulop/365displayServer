@@ -6,25 +6,25 @@ provider:
     websocket: true
   environment:
     connectionsTable: ${self:custom.connectionsTable}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - "execute-api:ManageConnections"
+      Resource:
+        # https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-control-access-iam.html
+        - "arn:aws:execute-api:#{AWS::Region}:#{AWS::AccountId}:*/${self:custom.stage}/POST/@connections/*"
+    - Effect: Allow
+      Action:
+        - dynamodb:Scan
+        - dynamodb:PutItem
+        - dynamodb:DeleteItem
+      # Restrict our IAM role permissions to
+      # the specific table for the stage
+      Resource:
+        - "Fn::GetAtt": [ConnectionsTable, Arn]
+
 plugins:
   - serverless-rust
-
-iamRoleStatements:
-  - Effect: Allow
-    Action:
-      - "execute-api:ManageConnections"
-    Resource:
-      # https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-control-access-iam.html
-      - "arn:aws:execute-api:#{AWS::Region}:#{AWS::AccountId}:*/${self:custom.stage}/POST/@connections/*"
-  - Effect: Allow
-    Action:
-      - dynamodb:Scan
-      - dynamodb:PutItem
-      - dynamodb:DeleteItem
-    # Restrict our IAM role permissions to
-    # the specific table for the stage
-    Resource:
-      - "Fn::GetAtt": [ConnectionsTable, Arn]
 
 custom:
   stage: ${opt:stage, self:provider.stage}
