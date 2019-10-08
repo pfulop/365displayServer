@@ -88,8 +88,8 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
         }
     };
 
-    if let Err(_) = result {
-        error!("Cannot work with db");
+    if let Err(err) = result {
+        error!("Failed to work with connection: {:?}", err);
         return Ok(HttpResponse { status_code: 500 });
     }
 
