@@ -4,8 +4,14 @@ provider:
   runtime: rust
   logs:
     websocket: true
+  environment:
+    tableName: ${self:custom.tableName}
 plugins:
   - serverless-rust
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+  tableName: ${self:custom.stage}-connections
 
 package:
   individually: true
@@ -22,3 +28,17 @@ functions:
     handler: display
     events:
       - websocket: $default
+
+resources:
+  Resources:
+    ConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH

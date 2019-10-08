@@ -46,11 +46,9 @@ enum ConnectionError {
     Disconnect(RusotoError<DeleteItemError>),
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     simple_logger::init_with_level(Level::Info).unwrap();
-    lambda!(handler);
-
-    Ok(())
+    lambda!(handler)
 }
 
 fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
