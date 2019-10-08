@@ -1,19 +1,22 @@
-use dynomite::{
-    dynamodb::{
-        DeleteItemError, DeleteItemInput, DynamoDb, DynamoDbClient, PutItemError, PutItemInput,
-    },
+use std::error::Error;
+
+use dynomite::dynamodb::{
+    DeleteItemError, DeleteItemInput, DynamoDb, DynamoDbClient, PutItemError, PutItemInput,
 };
+use dynomite::Item;
+use futures::Future;
 use lambda_runtime::{error::HandlerError, lambda, Context};
-use log::Level;
-use serde::{Serialize, Deserialize};
-use serde_json::Value;
+use log::{error, Level};
+use rusoto_core::RusotoError;
+use serde::{Deserialize, Serialize};
 use simple_logger;
+use tokio::runtime::Runtime;
 
 mod models;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CustomOutput {
+struct HttpResponse {
     status_code: i16,
 }
 
@@ -37,45 +40,58 @@ enum EventType {
     Disconnect,
 }
 
-
-fn main() {
-    simple_logger::init_with_level(Level::Info).unwrap();
-    return lambda!(handler);
+#[derive(Debug)]
+enum ConnectionError {
+    Connect(RusotoError<PutItemError>),
+    Disconnect(RusotoError<DeleteItemError>),
 }
 
-fn handler(event: Event, _: Context) -> Result<Value, HandlerError> {
+fn main() -> Result<(), Box<dyn Error>> {
+    simple_logger::init_with_level(Level::Info).unwrap();
+    lambda!(handler);
+
+    Ok(())
+}
+
+fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
     // let table_name = env::var("tableName")?;
+    let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let connection = models::Connection {
         id: event.request_context.connection_id,
-        role: models::Role::Observer
+        role: models::Role::Observer,
     };
-    let DDB = DynamoDbClient::new(Default::default());
+    let d_d_b = DynamoDbClient::new(Default::default());
 
     let result = match event.request_context.event_type {
         EventType::Connect => {
-            DDB.put_item(PutItemInput { item: connection.into(), ..PutItemInput::default() })
-            // DDB.with(|ddb| {
-            //     Either::A(
-            //         ddb.put_item(PutItemInput {
-            //             table_name,
-            //             item: connection.clone().into(),
-            //             ..PutItemInput::default()
-            //         })
-            //         .map(drop)
-            //         .map_err(Error::Connect),
-            //     )
-            // })
+            let res = rt.block_on(
+                d_d_b
+                    .put_item(PutItemInput {
+                        item: connection.into(),
+                        ..PutItemInput::default()
+                    })
+                    .map(drop)
+                    .map_err(ConnectionError::Connect),
+            );
+            res
         }
         EventType::Disconnect => {
-            DDB.delete_item(DeleteItemInput { key: connection.key(), ..DeleteItemInput::default() })
+            let res = rt.block_on(
+                d_d_b
+                    .delete_item(DeleteItemInput {
+                        key: connection.key(),
+                        ..DeleteItemInput::default()
+                    })
+                    .map(drop)
+                    .map_err(ConnectionError::Disconnect),
+            );
+            res
         }
     };
 
-    if let Err(err) = RT.with(|rt| rt.borrow_mut().block_on(result)) {
-        log::error!("failed to perform connection operation: {:?}", err);
+    if let Err(_) = result {
+        error!("Cannot work with db");
     }
 
-    Ok(json!({
-        "statusCode": 200
-    }))
+    Ok(HttpResponse { status_code: 200 })
 }

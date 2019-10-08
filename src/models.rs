@@ -1,18 +1,15 @@
-use dynomite::{
-    Item,
-    Attribute
-};
+use dynomite::{Attribute, Item};
 
 #[derive(Attribute)]
 pub enum Role {
     Observer,
     Player,
-    Admin
+    Admin,
 }
 
 #[derive(Item)]
 pub struct Connection {
-    #[hash]
-    id: String,
-    role: Role
+    #[dynomite(partition_key)]
+    pub id: String,
+    pub role: Role,
 }
