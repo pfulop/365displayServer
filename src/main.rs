@@ -51,7 +51,7 @@ fn main() {
 }
 
 fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
-    let table_name = env::var("tableName")?;
+    let table_name = env::var("connectionsTable")?;
     let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let connection = models::Connection {
         id: event.request_context.connection_id,
