@@ -5,7 +5,7 @@ provider:
   logs:
     websocket: true
   environment:
-    tableName: ${self:custom.tableName}
+    tableName: ${self:custom.connectionsTable}
 plugins:
   - serverless-rust
 
@@ -51,7 +51,7 @@ resources:
     ConnectionsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:custom.tableName}
+        TableName: ${self:custom.connectionsTable}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: id
