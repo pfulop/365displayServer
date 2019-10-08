@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use dynomite::dynamodb::{
     DeleteItemError, DeleteItemInput, DynamoDb, DynamoDbClient, PutItemError, PutItemInput,
 };
@@ -89,6 +87,7 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
 
     if let Err(_) = result {
         error!("Cannot work with db");
+        return Ok(HttpResponse { status_code: 500 });
     }
 
     Ok(HttpResponse { status_code: 200 })
