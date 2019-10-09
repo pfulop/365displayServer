@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/pfulop/365displayServer#readme",
   "devDependencies": {
+    "serverless-pseudo-parameters": "^2.5.0",
     "serverless-rust": "^0.3.6"
   }
 }

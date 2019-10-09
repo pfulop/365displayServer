@@ -25,10 +25,11 @@ provider:
 
 plugins:
   - serverless-rust
+  - serverless-pseudo-parameters
 
 custom:
   stage: ${opt:stage, self:provider.stage}
-  connectionsTable: ${self:custom.stage}-connections
+  connectionsTable: ${self:custom.stage}-${self:provider.name}-connections
 
 package:
   individually: true
