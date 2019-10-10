@@ -18,6 +18,7 @@ provider:
         - dynamodb:Scan
         - dynamodb:PutItem
         - dynamodb:DeleteItem
+        - dynamodb:GetItem
       # Restrict our IAM role permissions to
       # the specific table for the stage
       Resource:
@@ -29,7 +30,7 @@ plugins:
 
 custom:
   stage: ${opt:stage, self:provider.stage}
-  connectionsTable: ${self:custom.stage}-${self:provider.name}-connections
+  connectionsTable: ${self:custom.stage}-${self:service}-connections
 
 package:
   individually: true

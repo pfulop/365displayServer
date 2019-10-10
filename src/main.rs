@@ -1,66 +1,33 @@
-use dynomite::dynamodb::{
-    DeleteItemError, DeleteItemInput, DynamoDb, DynamoDbClient, PutItemError, PutItemInput,
-};
+use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, PutItemInput};
 use dynomite::Item;
 use futures::Future;
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{error, Level};
-use rusoto_core::RusotoError;
-use serde::{Deserialize, Serialize};
 use simple_logger;
 use std::env;
 use tokio::runtime::Runtime;
 
+mod connection_enums;
+mod events;
 mod models;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct HttpResponse {
-    status_code: i16,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Event {
-    request_context: RequestContext,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RequestContext {
-    event_type: EventType,
-    connection_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-enum EventType {
-    Connect,
-    Disconnect,
-}
-
-#[derive(Debug)]
-enum ConnectionError {
-    Connect(RusotoError<PutItemError>),
-    Disconnect(RusotoError<DeleteItemError>),
-}
+mod responses;
+mod send;
 
 fn main() {
-    simple_logger::init_with_level(Level::Info).unwrap();
+    simple_logger::init_with_level(Level::Debug).unwrap();
     lambda!(handler)
 }
 
-fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
+fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, HandlerError> {
     let table_name = env::var("connectionsTable")?;
     let mut rt = Runtime::new().expect("failed to initialize futures runtime");
-    let connection = models::Connection {
-        id: event.request_context.connection_id,
-        role: models::Role::Observer,
-    };
     let d_d_b = DynamoDbClient::new(Default::default());
-
-    let result = match event.request_context.event_type {
-        EventType::Connect => {
+    let result = match event.request_context.event_type.as_ref() {
+        "CONNECT" => {
+            let connection = models::Connection {
+                id: event.request_context.connection_id,
+                role: Some(models::Role::Observer),
+            };
             let res = rt.block_on(
                 d_d_b
                     .put_item(PutItemInput {
@@ -69,11 +36,15 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
                         ..PutItemInput::default()
                     })
                     .map(drop)
-                    .map_err(ConnectionError::Connect),
+                    .map_err(connection_enums::ConnectionError::Connect),
             );
             res
         }
-        EventType::Disconnect => {
+        "DISCONNECT" => {
+            let connection = models::Connection {
+                id: event.request_context.connection_id,
+                role: None,
+            };
             let res = rt.block_on(
                 d_d_b
                     .delete_item(DeleteItemInput {
@@ -82,16 +53,17 @@ fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
                         ..DeleteItemInput::default()
                     })
                     .map(drop)
-                    .map_err(ConnectionError::Disconnect),
+                    .map_err(connection_enums::ConnectionError::Disconnect),
             );
             res
         }
+        _ => send::pong(event),
     };
 
     if let Err(err) = result {
         error!("Failed to work with connection: {:?}", err);
-        return Ok(HttpResponse { status_code: 500 });
+        return Ok(responses::HttpResponse { status_code: 500 });
     }
 
-    Ok(HttpResponse { status_code: 200 })
+    Ok(responses::HttpResponse { status_code: 200 })
 }
