@@ -36,17 +36,21 @@ package:
   individually: true
 functions:
   connect:
-    handler: display
+    handler: connections
     events:
       - websocket: $connect
   disconnect:
-    handler: display
+    handler: connections
     events:
       - websocket: $disconnect
   default:
-    handler: display
+    handler: connections
     events:
       - websocket: $default
+  selection:
+    handler: selection
+    events:
+      - websocket: selection
 
 resources:
   Resources:

@@ -1,3 +1,4 @@
+use common::*;
 use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, PutItemInput};
 use dynomite::Item;
 use futures::Future;
@@ -7,14 +8,8 @@ use simple_logger;
 use std::env;
 use tokio::runtime::Runtime;
 
-mod connection_enums;
-mod events;
-mod models;
-mod responses;
-mod send;
-
 fn main() {
-    simple_logger::init_with_level(Level::Debug).unwrap();
+    simple_logger::init_with_level(Level::Info).unwrap();
     lambda!(handler)
 }
 
@@ -27,6 +22,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
             let connection = models::Connection {
                 id: event.request_context.connection_id,
                 role: Some(models::Role::Observer),
+                que: None,
             };
             let res = rt.block_on(
                 d_d_b
@@ -44,6 +40,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
             let connection = models::Connection {
                 id: event.request_context.connection_id,
                 role: None,
+                que: None,
             };
             let res = rt.block_on(
                 d_d_b

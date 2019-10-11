@@ -10,6 +10,7 @@ use rusoto_apigatewaymanagementapi::{
     PostToConnectionRequest,
 };
 use rusoto_core::{Region, RusotoError};
+use serde_json::json;
 use std::env;
 use tokio::runtime::Runtime;
 
@@ -28,6 +29,7 @@ pub fn pong(event: events::Event) -> Result<(), connection_enums::ConnectionErro
     let connection = models::Connection {
         id: event.request_context.connection_id.clone(),
         role: None,
+        que: None,
     };
 
     let res = DDB.with(|ddb| {
@@ -56,6 +58,13 @@ pub fn pong(event: events::Event) -> Result<(), connection_enums::ConnectionErro
         .unwrap()
 }
 
+pub fn role_accepted(event: events::Event, role: models::Role) {
+    let message =
+        serde_json::to_string(&json!({ "role": role, "status": "accepted" })).unwrap_or_default();
+    let connection_id = event.request_context.connection_id.clone();
+    send(event, connection_id, message);
+}
+
 fn send(event: events::Event, connection_id: String, message: String) {
     let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let default_region = Region::default().name().to_owned();
@@ -74,6 +83,7 @@ fn send(event: events::Event, connection_id: String, message: String) {
         let connection = models::Connection {
             id: connection_id.clone(),
             role: None,
+            que: None,
         };
         log::info!("hanging up on disconnected client {}", connection_id);
         if let Err(err) = DDB.with(|ddb| {
