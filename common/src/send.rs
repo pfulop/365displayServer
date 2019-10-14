@@ -65,6 +65,13 @@ pub fn role_accepted(event: events::Event, role: models::Role) {
     send(event, connection_id, message);
 }
 
+pub fn put_in_que(event: events::Event, role: models::Role, order: i64) {
+    let message = serde_json::to_string(&json!({ "role": role, "status": "que", "order": order }))
+        .unwrap_or_default();
+    let connection_id = event.request_context.connection_id.clone();
+    send(event, connection_id, message);
+}
+
 fn send(event: events::Event, connection_id: String, message: String) {
     let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let default_region = Region::default().name().to_owned();

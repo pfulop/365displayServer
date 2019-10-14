@@ -65,3 +65,6 @@ resources:
         KeySchema:
           - AttributeName: id
             KeyType: HASH
+        TimeToLiveSpecification:
+          Enabled: true
+          AttributeName: clearAt
