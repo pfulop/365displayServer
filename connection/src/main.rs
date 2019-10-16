@@ -22,7 +22,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
             let connection = models::Connection {
                 id: event.request_context.connection_id,
                 role: Some(models::Role::Observer),
-                que: None,
+                que: false,
             };
             let res = rt.block_on(
                 d_d_b
@@ -40,7 +40,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
             let connection = models::Connection {
                 id: event.request_context.connection_id,
                 role: None,
-                que: None,
+                que: false,
             };
             let res = rt.block_on(
                 d_d_b

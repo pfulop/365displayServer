@@ -31,9 +31,9 @@ fn main() {
 }
 
 fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, HandlerError> {
-    let message = event.message().unwrap();
-    let message_content: SelectionMessage = serde_json::from_str(&message.message.unwrap())?;
-
+    let message = event.message();
+    let message_content: SelectionMessage = serde_json::from_str(&message)?;
+    log::debug!("content");
     match message_content.role {
         models::Role::AdminDisplay | models::Role::AdminPong => {
             if message_content.password.unwrap_or_else(|| "_".to_owned())
@@ -122,7 +122,7 @@ fn put_into_que(
     let connection = models::Connection {
         id: event.request_context.connection_id.to_owned(),
         role: Some(message_content.role),
-        que: Some(true),
+        que: true,
     };
     let res = DDB.with(|ddb| {
         rt.block_on(
@@ -155,11 +155,10 @@ fn put_into_que(
                         expression_attribute_names: Some(expression_attribute_names),
                         expression_attribute_values: Some(attr_map!(
                             ":roleval" =>  message_content.role,
+                            ":queval" =>  false,
                             ":clearAt" => since_the_epoch.as_secs(),
                         )),
-                        condition_expression: Some(
-                            "#R = :roleval AND attribute_not_exists(#Q)".into(),
-                        ),
+                        condition_expression: Some("#R = :roleval AND #Q = :queval".into()),
                         update_expression: Some("SET clearAt = :clearAt".into()),
                         ..UpdateItemInput::default()
                     }))
@@ -180,7 +179,7 @@ fn set_role(message_conent: SelectionMessage, table_name: String, event: events:
     let connection = models::Connection {
         id: event.request_context.connection_id.to_owned(),
         role: Some(message_conent.role),
-        que: None,
+        que: false,
     };
     let res = DDB.with(|ddb| {
         rt.block_on(

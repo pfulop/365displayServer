@@ -15,5 +15,5 @@ pub struct Connection {
     #[dynomite(partition_key)]
     pub id: String,
     pub role: Option<Role>,
-    pub que: Option<bool>,
+    pub que: bool,
 }

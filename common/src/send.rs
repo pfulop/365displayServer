@@ -29,7 +29,7 @@ pub fn pong(event: events::Event) -> Result<(), connection_enums::ConnectionErro
     let connection = models::Connection {
         id: event.request_context.connection_id.clone(),
         role: None,
-        que: None,
+        que: false,
     };
 
     let res = DDB.with(|ddb| {
@@ -90,7 +90,7 @@ fn send(event: events::Event, connection_id: String, message: String) {
         let connection = models::Connection {
             id: connection_id.clone(),
             role: None,
-            que: None,
+            que: false,
         };
         log::info!("hanging up on disconnected client {}", connection_id);
         if let Err(err) = DDB.with(|ddb| {

@@ -1,11 +1,5 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Message {
-    pub message: Option<String>,
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestContext {
@@ -19,12 +13,12 @@ pub struct RequestContext {
 #[serde(rename_all = "camelCase")]
 pub struct Event {
     pub request_context: RequestContext,
-    body: Option<String>,
+    pub body: Option<String>,
 }
 
 impl Event {
-    pub fn message(&self) -> Option<Message> {
-        let body = &self.body.clone().unwrap();
-        serde_json::from_str::<Message>(body).ok()
+    pub fn message(&self) -> String {
+        let result = &self.body.clone().unwrap();
+        result.clone()
     }
 }
