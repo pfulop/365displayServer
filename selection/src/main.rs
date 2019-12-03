@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::env;
 use std::string::ToString;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::runtime::Runtime;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SelectionMessage {
@@ -58,13 +57,12 @@ fn save_role(
     event: events::Event,
 ) -> Result<responses::HttpResponse, HandlerError> {
     let table_name = env::var("connectionsTable")?;
-    let mut rt = Runtime::new().expect("failed to initialize futures runtime");
 
     let mut expression_attribute_names = HashMap::new();
     expression_attribute_names.insert("#R".to_string(), "role".to_string());
 
     let res = DDB.with(|ddb| {
-        rt.block_on(ddb.scan(ScanInput {
+        ddb.scan(ScanInput {
             table_name: table_name.clone(),
             select: Some("COUNT".into()),
             expression_attribute_names: Some(expression_attribute_names),
@@ -73,7 +71,8 @@ fn save_role(
             )),
             filter_expression: Some("#R = :val".into()),
             ..ScanInput::default()
-        }))
+        })
+        .sync()
     });
 
     let n_existing = res.unwrap().count.unwrap();
@@ -104,7 +103,8 @@ fn save_role(
                 put_into_que(message_content, table_name, event, n_existing);
                 Ok(responses::HttpResponse { status_code: 200 })
             } else {
-                set_role(message_content, table_name, event);
+                let connection = set_role(message_content, table_name.clone(), event.clone());
+                send::inform_server(event, connection.id, table_name, "CONNECTED".to_string());
                 Ok(responses::HttpResponse { status_code: 200 })
             }
         }
@@ -118,22 +118,20 @@ fn put_into_que(
     event: events::Event,
     n_existing: i64,
 ) {
-    let mut rt = Runtime::new().expect("failed to initialize futures runtime");
     let connection = models::Connection {
         id: event.request_context.connection_id.to_owned(),
         role: Some(message_content.role),
         que: true,
     };
     let res = DDB.with(|ddb| {
-        rt.block_on(
-            ddb.put_item(PutItemInput {
-                table_name: table_name.clone(),
-                item: connection.into(),
-                ..PutItemInput::default()
-            })
-            .map(drop)
-            .map_err(connection_enums::ConnectionError::Connect),
-        )
+        ddb.put_item(PutItemInput {
+            table_name: table_name.clone(),
+            item: connection.into(),
+            ..PutItemInput::default()
+        })
+        .sync()
+        .map(drop)
+        .map_err(connection_enums::ConnectionError::Connect)
     });
 
     if let Err(err) = res {
@@ -150,7 +148,7 @@ fn put_into_que(
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards");
                 let res = DDB.with(|ddb| {
-                    rt.block_on(ddb.update_item(UpdateItemInput {
+                    ddb.update_item(UpdateItemInput {
                         table_name: table_name,
                         expression_attribute_names: Some(expression_attribute_names),
                         expression_attribute_values: Some(attr_map!(
@@ -161,7 +159,8 @@ fn put_into_que(
                         condition_expression: Some("#R = :roleval AND #Q = :queval".into()),
                         update_expression: Some("SET clearAt = :clearAt".into()),
                         ..UpdateItemInput::default()
-                    }))
+                    })
+                    .sync()
                 });
                 if let Err(err) = res {
                     error!("There has been an error setting que ttl {}", err);
@@ -173,8 +172,11 @@ fn put_into_que(
     }
 }
 
-fn set_role(message_conent: SelectionMessage, table_name: String, event: events::Event) {
-    let mut rt = Runtime::new().expect("failed to initialize futures runtime");
+fn set_role(
+    message_conent: SelectionMessage,
+    table_name: String,
+    event: events::Event,
+) -> models::Connection {
     let role = message_conent.role;
     let connection = models::Connection {
         id: event.request_context.connection_id.to_owned(),
@@ -182,15 +184,14 @@ fn set_role(message_conent: SelectionMessage, table_name: String, event: events:
         que: false,
     };
     let res = DDB.with(|ddb| {
-        rt.block_on(
-            ddb.put_item(PutItemInput {
-                table_name,
-                item: connection.into(),
-                ..PutItemInput::default()
-            })
-            .map(drop)
-            .map_err(connection_enums::ConnectionError::Connect),
-        )
+        ddb.put_item(PutItemInput {
+            table_name,
+            item: connection.into(),
+            ..PutItemInput::default()
+        })
+        .sync()
+        .map(drop)
+        .map_err(connection_enums::ConnectionError::Connect)
     });
 
     if let Err(err) = res {
@@ -198,4 +199,6 @@ fn set_role(message_conent: SelectionMessage, table_name: String, event: events:
     } else {
         send::role_accepted(event, role);
     }
+
+    connection
 }

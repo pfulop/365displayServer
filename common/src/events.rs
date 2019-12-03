@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct RequestContext {
     pub event_type: String,
     pub connection_id: String,
@@ -11,6 +12,7 @@ pub struct RequestContext {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct Event {
     pub request_context: RequestContext,
     pub body: Option<String>,

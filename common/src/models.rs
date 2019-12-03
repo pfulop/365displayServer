@@ -10,7 +10,7 @@ pub enum Role {
     AdminDisplay,
 }
 
-#[derive(Serialize, Deserialize, Debug, Item)]
+#[derive(Serialize, Deserialize, Debug, Item, Clone)]
 pub struct Connection {
     #[dynomite(partition_key)]
     pub id: String,
