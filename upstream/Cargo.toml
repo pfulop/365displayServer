@@ -1,5 +1,5 @@
 [package]
-name = "selection"
+name = "upstream"
 version = "0.1.0"
 authors = ["Pavol Fulop <pavolfulop@gmail.com>"]
 edition = "2018"

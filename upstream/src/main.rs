@@ -3,6 +3,7 @@ use dynomite::{
     attr_map,
     dynamodb::{DynamoDb, DynamoDbClient, PutItemInput, ScanInput, UpdateItemInput},
 };
+use futures::Future;
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{debug, error, Level};
 use serde::{Deserialize, Serialize};
@@ -12,12 +13,6 @@ use std::collections::HashMap;
 use std::env;
 use std::string::ToString;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SelectionMessage {
-    role: models::Role,
-    password: Option<String>,
-}
 
 thread_local!(
     static DDB: DynamoDbClient = DynamoDbClient::new(Default::default());
@@ -30,7 +25,6 @@ fn main() {
 
 fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, HandlerError> {
     let message = event.message();
-    let message_content: SelectionMessage = serde_json::from_str(&message)?;
     match message_content.role {
         models::Role::AdminDisplay | models::Role::AdminPong => {
             if message_content.password.unwrap_or_else(|| "_".to_owned())
@@ -102,7 +96,7 @@ fn save_role(
                 Ok(responses::HttpResponse { status_code: 200 })
             } else {
                 let connection = set_role(message_content, table_name.clone(), event.clone());
-                send::inform_server(event, connection.id, table_name, "CONNECTED".to_string()); //TODO: fix this
+                send::inform_server(event, connection.id, table_name, "CONNECTED".to_string());
                 Ok(responses::HttpResponse { status_code: 200 })
             }
         }

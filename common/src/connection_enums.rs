@@ -10,3 +10,11 @@ quick_error! {
         Default{from(std::env::VarError)}
     }
 }
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum ConnectionItemError {
+        NoConnection{from()}
+        WrongDirection{from()}
+    }
+}

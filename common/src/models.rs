@@ -17,3 +17,9 @@ pub struct Connection {
     pub role: Option<Role>,
     pub que: bool,
 }
+
+#[derive(Serialize, Deserialize, Debug, Item, Clone)]
+pub struct UnresolvedConnection {
+    #[dynomite(partition_key)]
+    pub id: String,
+}
