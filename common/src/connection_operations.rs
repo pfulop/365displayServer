@@ -5,7 +5,7 @@ use dynomite::{
     dynamodb::{DynamoDb, DynamoDbClient, GetItemInput, ScanInput},
     DynamoDbExt, FromAttributes, Item,
 };
-use failure::Error;
+use failure::{bail, Error};
 use std::collections::HashMap;
 use std::env;
 
@@ -43,9 +43,9 @@ pub fn find_user(id: String) -> Result<Connection, Error> {
 
 pub fn find_admin(role: Role) -> Result<Connection, Error> {
     let admin_role = match role {
-        PlayerPong => Role::AdminPong,
-        PlayerDisplay => Role::AdminDisplay,
-        Default => Role::Observer,
+        Role::PlayerPong => Role::AdminPong,
+        Role::PlayerDisplay => Role::AdminDisplay,
+        _ => bail!("Unknown player"),
     };
 
     let mut expression_attribute_names = HashMap::new();
