@@ -3,6 +3,7 @@ use dynomite::{
     attr_map,
     dynamodb::{DynamoDb, DynamoDbClient, PutItemInput, ScanInput, UpdateItemInput},
 };
+use failure::{bail, Error};
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{debug, error, Level};
 use serde::{Deserialize, Serialize};
@@ -129,7 +130,7 @@ fn put_into_que(
         })
         .sync()
         .map(drop)
-        .map_err(connection_enums::ConnectionError::Connect)
+        .map_err(Error::from)
     });
 
     if let Err(err) = res {
@@ -190,7 +191,7 @@ fn set_role(
         })
         .sync()
         .map(drop)
-        .map_err(connection_enums::ConnectionError::Connect)
+        .map_err(Error::from)
     });
 
     if let Err(err) = res {

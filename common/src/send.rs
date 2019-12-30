@@ -4,6 +4,7 @@ use crate::models;
 use bytes::Bytes;
 use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, GetItemInput};
 use dynomite::{FromAttributes, Item};
+use failure::{bail, Error};
 use log::error;
 use rusoto_apigatewaymanagementapi::{
     ApiGatewayManagementApi, ApiGatewayManagementApiClient, PostToConnectionError,
@@ -21,7 +22,7 @@ fn endpoint(ctx: &events::RequestContext) -> String {
     format!("https://{}/{}", ctx.domain_name, ctx.stage)
 }
 
-pub fn pong(event: events::Event) -> Result<(), connection_enums::ConnectionError> {
+pub fn pong(event: events::Event) -> Result<(), Error> {
     let table_name = env::var("connectionsTable")?;
 
     let connection = models::Connection {

@@ -1,6 +1,7 @@
 use common::*;
 use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, PutItemInput};
 use dynomite::Item;
+use failure::{bail, Error};
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{error, Level};
 use simple_logger;
@@ -32,7 +33,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
                 })
                 .sync()
                 .map(drop)
-                .map_err(connection_enums::ConnectionError::Connect)
+                .map_err(Error::from)
             })
         }
         "DISCONNECT" => {
@@ -49,7 +50,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
                 })
                 .sync()
                 .map(drop)
-                .map_err(connection_enums::ConnectionError::Disconnect)
+                .map_err(Error::from)
             })
         }
         _ => send::pong(event),
