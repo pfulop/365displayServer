@@ -3,7 +3,7 @@ use dynomite::{
     attr_map,
     dynamodb::{DynamoDb, DynamoDbClient, PutItemInput, ScanInput, UpdateItemInput},
 };
-use failure::{bail, Error};
+use failure::Error;
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{debug, error, Level};
 use serde::{Deserialize, Serialize};

@@ -3,7 +3,7 @@ use super::models::*;
 use dynomite::{
     attr_map,
     dynamodb::{DynamoDb, DynamoDbClient, GetItemInput, ScanInput},
-    DynamoDbExt, FromAttributes, Item,
+    FromAttributes, Item,
 };
 use failure::{bail, Error};
 use std::collections::HashMap;
@@ -66,4 +66,33 @@ pub fn find_admin(role: Role) -> Result<Connection, Error> {
     let admin_item = items.get(0).ok_or(ConnectionItemError::NoConnection)?;
     let admin = Connection::from_attrs(admin_item.to_owned()).map_err(Error::from);
     admin
+}
+
+pub fn find_players(role: Role) -> Result<Vec<Connection>, Error> {
+    let player_role = match role {
+        Role::AdminPong => Role::PlayerPong,
+        Role::AdminDisplay => Role::PlayerDisplay,
+        _ => bail!("Unknown player"),
+    };
+
+    let mut expression_attribute_names = HashMap::new();
+    expression_attribute_names.insert("#R".to_string(), "role".to_string());
+    let res = DDB.with(|ddb| {
+        ddb.scan(ScanInput {
+            table_name: get_connections_table(),
+            expression_attribute_names: Some(expression_attribute_names),
+            expression_attribute_values: Some(attr_map!(
+                ":val" =>  player_role
+            )),
+            filter_expression: Some("#R = :val".into()),
+            ..ScanInput::default()
+        })
+        .sync()
+    });
+    let players = res?.items.ok_or(ConnectionItemError::NoConnection)?;
+    let player_connections: Vec<_> = players
+        .iter()
+        .map(|player| Connection::from_attrs(player.to_owned()).unwrap())
+        .collect();
+    Ok(player_connections)
 }

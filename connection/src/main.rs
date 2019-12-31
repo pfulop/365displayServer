@@ -1,7 +1,7 @@
 use common::*;
 use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, PutItemInput};
 use dynomite::Item;
-use failure::{bail, Error};
+use failure::Error;
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::{error, Level};
 use simple_logger;

@@ -1,6 +1,6 @@
 //FROM CLIENT TO SERVER
 
-use common::{connection_operations::*, events::*, responses::*, send::*};
+use common::{connection_operations::*, events::*, models::*, responses::*, send::*};
 use dynomite::dynamodb::DynamoDbClient;
 use lambda_runtime::{error::HandlerError, lambda, Context};
 use log::Level;
@@ -17,10 +17,17 @@ fn main() {
 
 fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
     let message = event.message().clone();
-    let player = find_user(event.request_context.connection_id.clone())?;
-    let admin = find_admin(player.role.unwrap())?;
-    if player.id != admin.id {
-        send(event, admin.id, message);
-    }
+    let admin = find_user(event.request_context.connection_id.clone())?;
+
+    match admin.role {
+        Some(Role::AdminPong) | Some(Role::AdminDisplay) => {
+            let players = find_players(admin.role.unwrap())?;
+            for player in players {
+                send(event.to_owned(), player.id, message.clone());
+            }
+        }
+        _ => {}
+    };
+
     return Ok(HttpResponse { status_code: 200 });
 }

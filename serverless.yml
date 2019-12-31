@@ -55,6 +55,10 @@ functions:
     handler: upstream
     events:
       - websocket: upstream
+  downstream:
+    handler: downstream
+    events:
+      - websocket: downstream
 
 resources:
   Resources:

@@ -4,7 +4,7 @@ use crate::models;
 use bytes::Bytes;
 use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, GetItemInput};
 use dynomite::{FromAttributes, Item};
-use failure::{bail, Error};
+use failure::Error;
 use log::error;
 use rusoto_apigatewaymanagementapi::{
     ApiGatewayManagementApi, ApiGatewayManagementApiClient, PostToConnectionError,
@@ -78,7 +78,7 @@ pub fn inform_server(event: events::Event, id: String, admin_id: String, status:
     send(event, admin_id, message);
 }
 
-fn send(event: events::Event, connection_id: String, message: String) {
+pub fn send(event: events::Event, connection_id: String, message: String) {
     let default_region = Region::default().name().to_owned();
     let client = ApiGatewayManagementApiClient::new(Region::Custom {
         name: default_region,

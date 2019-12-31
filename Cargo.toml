@@ -3,5 +3,7 @@
 members = [
     "connection",
     "common",
-    "selection"
+    "selection",
+    "upstream",
+    "downstream"
 ]
