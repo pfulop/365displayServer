@@ -19,8 +19,10 @@ provider:
         - dynamodb:PutItem
         - dynamodb:DeleteItem
         - dynamodb:GetItem
-      # Restrict our IAM role permissions to
-      # the specific table for the stage
+        - dynamodb:DescribeStream
+        - dynamodb:GetRecords
+        - dynamodb:GetShardIterator
+        - dynamodb:ListStreams
       Resource:
         - "Fn::GetAtt": [ConnectionsTable, Arn]
 
@@ -59,6 +61,12 @@ functions:
     handler: downstream
     events:
       - websocket: downstream
+  timeout:
+    handler: timeout
+    events:
+      - stream:
+        arn:
+          "Fn::GetAtt": [ConnectionsTable, Arn]
 
 resources:
   Resources:
@@ -76,3 +84,5 @@ resources:
         TimeToLiveSpecification:
           Enabled: true
           AttributeName: clearAt
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES

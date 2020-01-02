@@ -201,5 +201,3 @@ fn set_role(
     }
     return_connection
 }
-//TODO: send client data to server if correct role
-//TODO: send server data to correct clients (even those who are in que)

@@ -36,12 +36,38 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
                 .map_err(Error::from)
             })
         }
-        "DISCONNECT" => {
-            let connection = models::Connection {
-                id: event.request_context.connection_id,
-                role: None,
-                que: false,
-            };
+        "DISCONNECT" => connection_operations::find_user(
+            event.request_context.connection_id.clone(),
+        )
+        .and_then(|connection| {
+            if !connection.que {
+                match connection.role {
+                    Some(models::Role::PlayerPong) | Some(models::Role::PlayerDisplay) => {
+                        if let Ok(admin) =
+                            connection_operations::find_admin(connection.role.unwrap())
+                        {
+                            send::inform_server(
+                                event.clone(),
+                                connection.id.clone(),
+                                admin.id.clone(),
+                                "DISCONNECTED".to_string(),
+                            );
+                            if let Ok(player) =
+                                connection_operations::find_next_in_que(connection.role.unwrap())
+                            {
+                                send::inform_server(
+                                    event.clone(),
+                                    player.id.clone(),
+                                    admin.id,
+                                    "CONNECTED".to_string(),
+                                );
+                                connection_operations::mark_player_active(player.id)
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             DDB.with(|ddb| {
                 ddb.delete_item(DeleteItemInput {
                     table_name,
@@ -52,7 +78,7 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
                 .map(drop)
                 .map_err(Error::from)
             })
-        }
+        }),
         _ => send::pong(event),
     };
 

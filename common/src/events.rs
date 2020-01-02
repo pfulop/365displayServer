@@ -1,3 +1,4 @@
+use rusoto_dynamodbstreams::*;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -15,6 +16,7 @@ pub struct RequestContext {
 #[derive(Clone)]
 pub struct Event {
     pub request_context: RequestContext,
+    pub records: Option<Vec<Record>>,
     pub body: Option<String>,
 }
 
