@@ -56,7 +56,6 @@ fn save_role(
     event: events::Event,
 ) -> Result<responses::HttpResponse, HandlerError> {
     let table_name = env::var("connectionsTable")?;
-
     let mut expression_attribute_names = HashMap::new();
     expression_attribute_names.insert("#R".to_string(), "role".to_string());
 
@@ -197,7 +196,15 @@ fn set_role(
     if let Err(err) = res {
         error!("There has been an error setting role {}", err);
     } else {
-        send::role_accepted(event, role);
+        send::role_accepted(event.to_owned(), role);
+        if let Ok(admin) = connection_operations::find_admin(message_conent.role) {
+            send::inform_server(
+                event,
+                return_connection.clone().id,
+                admin.id,
+                "CONNECTED".to_string(),
+            );
+        }
     }
     return_connection
 }
