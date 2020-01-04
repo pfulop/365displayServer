@@ -14,7 +14,7 @@ thread_local!(
 );
 
 fn main() {
-    simple_logger::init_with_level(Level::Debug).unwrap();
+    simple_logger::init_with_level(Level::Info).unwrap();
     lambda!(handler)
 }
 
