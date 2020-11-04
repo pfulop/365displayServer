@@ -1,11 +1,12 @@
-use crate::connection_enums;
-use crate::events;
+use crate::connection_operations::delete_player;
+use crate::error::Error;
 use crate::models;
+use aws_lambda_events::event::apigw::{
+    ApiGatewayWebsocketProxyRequest, ApiGatewayWebsocketProxyRequestContext,
+};
 use bytes::Bytes;
-use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, GetItemInput};
+use dynomite::dynamodb::{DynamoDb, DynamoDbClient, GetItemInput};
 use dynomite::{FromAttributes, Item};
-use failure::Error;
-use log::error;
 use rusoto_apigatewaymanagementapi::{
     ApiGatewayManagementApi, ApiGatewayManagementApiClient, PostToConnectionError,
     PostToConnectionRequest,
@@ -18,95 +19,110 @@ thread_local! {
     static DDB: DynamoDbClient = DynamoDbClient::new(Default::default());
 }
 
-fn endpoint(ctx: &events::RequestContext) -> String {
-    format!("https://{}/{}", ctx.domain_name, ctx.stage)
+fn endpoint(ctx: &ApiGatewayWebsocketProxyRequestContext) -> String {
+    format!(
+        "https://{}/{}",
+        ctx.domain_name.clone().unwrap_or_default(),
+        ctx.stage.clone().unwrap_or_default()
+    )
 }
 
-pub fn pong(event: events::Event) -> Result<(), Error> {
+pub async fn pong(
+    request_context: ApiGatewayWebsocketProxyRequestContext,
+    client: DynamoDbClient,
+) -> Result<(), Error> {
     let table_name = env::var("connectionsTable")?;
+    let connection_id = request_context
+        .clone()
+        .connection_id
+        .ok_or("Missing Connection ID")?;
 
     let connection = models::Connection {
-        id: event.request_context.connection_id.clone(),
+        id: connection_id.clone(),
         role: None,
         que: false,
     };
 
-    let res = DDB.with(|ddb| {
-        ddb.get_item(GetItemInput {
+    let res = client
+        .get_item(GetItemInput {
             table_name,
             key: connection.key(),
             ..GetItemInput::default()
         })
-        .sync()
-    });
+        .await?;
 
-    res.unwrap()
-        .item
+    res.item
         .map(models::Connection::from_attrs)
-        .unwrap()
+        .ok_or("No connection found")?
         .map(|connection| serde_json::to_string(&connection))
-        .unwrap()
-        .map_err(|err| {
-            error!("Cannot find connection: {:?}", err);
-            connection_enums::ConnectionError::Default
-        })
-        .map(|message_string| {
-            let connection_id = event.request_context.connection_id.clone();
-            send(event, connection_id.clone(), message_string);
+        .map(|message_string| async {
+            let message = message_string.expect("There should be a message");
+            send(request_context, connection_id.clone(), message).await;
             Ok(())
         })
-        .unwrap()
+        .expect("Error sending message")
+        .await
 }
 
-pub fn role_accepted(event: events::Event, role: models::Role) {
-    let message =
-        serde_json::to_string(&json!({ "role": role, "status": "accepted" })).unwrap_or_default();
-    let connection_id = event.request_context.connection_id.clone();
-    send(event, connection_id, message);
+pub async fn role_accepted(
+    request_context: ApiGatewayWebsocketProxyRequestContext,
+    role: models::Role,
+) {
+    match request_context.clone().connection_id {
+        Some(connection_id) => {
+            let message = serde_json::to_string(&json!({ "role": role, "status": "accepted" }))
+                .unwrap_or_default();
+            send(request_context, connection_id, message).await;
+        }
+        None => {}
+    }
 }
 
-pub fn put_in_que(event: events::Event, role: models::Role, order: i64) {
-    let message = serde_json::to_string(&json!({ "role": role, "status": "que", "order": order }))
-        .unwrap_or_default();
-    let connection_id = event.request_context.connection_id.clone();
-    send(event, connection_id, message);
+pub async fn put_in_que(
+    request_context: ApiGatewayWebsocketProxyRequestContext,
+    role: models::Role,
+    order: i64,
+) {
+    match request_context.clone().connection_id {
+        Some(connection_id) => {
+            let message =
+                serde_json::to_string(&json!({ "role": role, "status": "que", "order": order }))
+                    .unwrap_or_default();
+            send(request_context, connection_id, message).await;
+        }
+        None => {}
+    }
 }
 
-pub fn inform_server(event: events::Event, id: String, admin_id: String, status: String) {
+pub async fn inform_server(
+    request_context: ApiGatewayWebsocketProxyRequestContext,
+    id: String,
+    admin_id: String,
+    status: String,
+) {
     let message =
         serde_json::to_string(&json!({ "connection": id, "status": status})).unwrap_or_default();
-    send(event, admin_id, message);
+    send(request_context, admin_id, message).await;
 }
 
-pub fn send(event: events::Event, connection_id: String, message: String) {
+pub async fn send(
+    request_context: ApiGatewayWebsocketProxyRequestContext,
+    connection_id: String,
+    message: String,
+) {
     let default_region = Region::default().name().to_owned();
     let client = ApiGatewayManagementApiClient::new(Region::Custom {
         name: default_region,
-        endpoint: endpoint(&event.request_context),
+        endpoint: endpoint(&request_context),
     });
     let reply_result = client
         .post_to_connection(PostToConnectionRequest {
             connection_id: connection_id.clone(),
             data: Bytes::from(message),
         })
-        .sync();
+        .await;
 
     if let Err(RusotoError::Service(PostToConnectionError::Gone(_))) = reply_result {
-        let connection = models::Connection {
-            id: connection_id.clone(),
-            role: None,
-            que: false,
-        };
-        log::info!("hanging up on disconnected client {}", connection_id);
-        if let Err(err) = DDB.with(|ddb| {
-            ddb.delete_item(DeleteItemInput {
-                table_name: env::var("tableName").expect("failed to resolve table"),
-                key: connection.key(),
-                ..DeleteItemInput::default()
-            })
-            .sync()
-        }) {
-            error!("Cannot delete connection {} {}", connection_id, err);
-        }
+        delete_player(connection_id).await;
     }
 }

@@ -1,91 +1,70 @@
-use common::*;
-use dynomite::dynamodb::{DeleteItemInput, DynamoDb, DynamoDbClient, PutItemInput};
-use dynomite::Item;
-use failure::Error;
-use lambda_runtime::{error::HandlerError, lambda, Context};
-use log::{error, Level};
-use simple_logger;
-use std::env;
+use aws_lambda_events::event::apigw::ApiGatewayWebsocketProxyRequest;
+use common::{connection_operations, error::Error, models, send};
+use lambda::{lambda, Context};
+use simple_logger::SimpleLogger;
 
-thread_local! {
-    static DDB: DynamoDbClient = DynamoDbClient::new(Default::default());
-}
+#[lambda]
+#[tokio::main]
+async fn main(e: ApiGatewayWebsocketProxyRequest, _: Context) -> Result<(), Error> {
+    SimpleLogger::new().init().unwrap();
 
-fn main() {
-    simple_logger::init_with_level(Level::Info).unwrap();
-    lambda!(handler)
-}
+    let event = e
+        .clone()
+        .request_context
+        .event_type
+        .ok_or("Missing Event Type")?;
 
-fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, HandlerError> {
-    let table_name = env::var("connectionsTable")?;
-    let result = match event.request_context.event_type.as_ref() {
+    match event.as_ref() {
         "CONNECT" => {
-            let connection = models::Connection {
-                id: event.request_context.connection_id,
-                role: Some(models::Role::Observer),
-                que: false,
-            };
-            DDB.with(|ddb| {
-                ddb.put_item(PutItemInput {
-                    table_name,
-                    item: connection.into(),
-                    ..PutItemInput::default()
-                })
-                .sync()
-                .map(drop)
-                .map_err(Error::from)
-            })
+            connection_operations::save_player(
+                e.request_context
+                    .connection_id
+                    .ok_or("Missing connection id")?,
+            )
+            .await;
         }
-        "DISCONNECT" => connection_operations::find_user(
-            event.request_context.connection_id.clone(),
-        )
-        .and_then(|connection| {
+        "DISCONNECT" => {
+            let connection_id = e
+                .clone()
+                .request_context
+                .connection_id
+                .ok_or("Missing Connection ID")?;
+            let unresolved_connection = models::UnresolvedConnection { id: connection_id };
+            let connection =
+                connection_operations::find_connection_in_db(unresolved_connection.clone()).await?;
             if !connection.que {
                 match connection.role {
                     Some(models::Role::PlayerPong) | Some(models::Role::PlayerDisplay) => {
-                        if let Ok(admin) =
-                            connection_operations::find_admin(connection.role.unwrap())
+                        let admin =
+                            connection_operations::find_admin(connection.role.unwrap()).await?;
+                        send::inform_server(
+                            e.request_context.clone(),
+                            connection.id.clone(),
+                            admin.id.clone(),
+                            "DISCONNECTED".to_string(),
+                        )
+                        .await;
+                        if let Ok(player) =
+                            connection_operations::find_next_in_que(connection.role.unwrap()).await
                         {
                             send::inform_server(
-                                event.clone(),
-                                connection.id.clone(),
-                                admin.id.clone(),
-                                "DISCONNECTED".to_string(),
-                            );
-                            if let Ok(player) =
-                                connection_operations::find_next_in_que(connection.role.unwrap())
-                            {
-                                send::inform_server(
-                                    event.clone(),
-                                    player.id.clone(),
-                                    admin.id,
-                                    "CONNECTED".to_string(),
-                                );
-                                connection_operations::mark_player_active(player.id)
-                            }
+                                e.request_context.clone(),
+                                player.id.clone(),
+                                admin.id,
+                                "CONNECTED".to_string(),
+                            )
+                            .await;
+                            connection_operations::mark_player_active(player.id).await;
                         }
                     }
                     _ => {}
                 }
             }
-            DDB.with(|ddb| {
-                ddb.delete_item(DeleteItemInput {
-                    table_name,
-                    key: connection.key(),
-                    ..DeleteItemInput::default()
-                })
-                .sync()
-                .map(drop)
-                .map_err(Error::from)
-            })
-        }),
-        _ => send::pong(event),
+            connection_operations::delete_player(unresolved_connection.id).await;
+        }
+        _ => {
+            log::warn!("UNKNOWN EVENT {}", event);
+        }
     };
-
-    if let Err(err) = result {
-        error!("Failed to work with connection: {:?}", err);
-        return Ok(responses::HttpResponse { status_code: 500 });
-    }
-
-    Ok(responses::HttpResponse { status_code: 200 })
+    Ok(())
 }

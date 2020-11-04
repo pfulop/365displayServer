@@ -2,6 +2,7 @@ service: service-365display
 provider:
   name: aws
   runtime: rust
+  logRetentionInDays: 3
   logs:
     websocket: true
   environment:

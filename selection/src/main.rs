@@ -1,18 +1,10 @@
-use common::*;
-use dynomite::{
-    attr_map,
-    dynamodb::{DynamoDb, DynamoDbClient, PutItemInput, ScanInput, UpdateItemInput},
-};
-use failure::Error;
-use lambda_runtime::{error::HandlerError, lambda, Context};
-use log::{debug, error, Level};
+use aws_lambda_events::event::apigw::ApiGatewayWebsocketProxyRequest;
+use common::{connection_operations, error::Error, models, send};
+use lambda::{lambda, Context};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use simple_logger;
-use std::collections::HashMap;
-use std::env;
+use simple_logger::SimpleLogger;
 use std::string::ToString;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SelectionMessage {
@@ -20,18 +12,14 @@ struct SelectionMessage {
     password: Option<String>,
 }
 
-thread_local!(
-    static DDB: DynamoDbClient = DynamoDbClient::new(Default::default());
-);
+#[lambda]
+#[tokio::main]
+async fn main(e: ApiGatewayWebsocketProxyRequest, _: Context) -> Result<(), Error> {
+    SimpleLogger::new().init().unwrap();
 
-fn main() {
-    simple_logger::init_with_level(Level::Info).unwrap();
-    lambda!(handler)
-}
-
-fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, HandlerError> {
-    let message = event.message();
+    let message = e.body.clone().unwrap();
     let message_content: SelectionMessage = serde_json::from_str(&message)?;
+
     match message_content.role {
         models::Role::AdminDisplay | models::Role::AdminPong => {
             if message_content.password.unwrap_or_else(|| "_".to_owned())
@@ -41,170 +29,114 @@ fn handler(event: events::Event, _: Context) -> Result<responses::HttpResponse, 
                     role: message_content.role,
                     password: None,
                 };
-                save_role(m, event)
+                save_role(m, e).await;
             } else {
-                error!("Wrong admin password");
-                Err("Wrong admin password".into())
+                return Err("Wrong admin password".into());
             }
         }
-        _ => save_role(message_content, event),
+        _ => {
+            save_role(message_content, e).await;
+        }
     }
+
+    Ok(())
 }
 
-fn save_role(
+async fn save_role(
     message_content: SelectionMessage,
-    event: events::Event,
-) -> Result<responses::HttpResponse, HandlerError> {
-    let table_name = env::var("connectionsTable")?;
-    let mut expression_attribute_names = HashMap::new();
-    expression_attribute_names.insert("#R".to_string(), "role".to_string());
-
-    let res = DDB.with(|ddb| {
-        ddb.scan(ScanInput {
-            table_name: table_name.clone(),
-            select: Some("COUNT".into()),
-            expression_attribute_names: Some(expression_attribute_names),
-            expression_attribute_values: Some(attr_map!(
-                ":val" =>  message_content.role
-            )),
-            filter_expression: Some("#R = :val".into()),
-            ..ScanInput::default()
-        })
-        .sync()
-    });
-
-    let n_existing = res.unwrap().count.unwrap();
+    event: ApiGatewayWebsocketProxyRequest,
+) -> Result<(), Error> {
+    let n_existing = connection_operations::get_player_count_by_role(message_content.role).await?;
 
     match message_content.role {
         models::Role::AdminDisplay | models::Role::AdminPong => {
-            if n_existing > 0 {
-                error!("Someone is trying to become another admin");
-                Ok(responses::HttpResponse { status_code: 500 })
-            } else {
-                set_role(message_content, table_name, event);
-                Ok(responses::HttpResponse { status_code: 200 })
+            if n_existing == 0 {
+                set_role(message_content, event).await;
             }
+            Ok(())
         }
         models::Role::PlayerDisplay => {
             if n_existing > 0 {
-                debug!("There is too many players, putting into que");
-                put_into_que(message_content, table_name, event, n_existing);
-                Ok(responses::HttpResponse { status_code: 200 })
+                put_into_que(message_content, event, n_existing).await;
+                Ok(())
             } else {
-                set_role(message_content, table_name, event);
-                Ok(responses::HttpResponse { status_code: 200 })
+                set_role(message_content, event).await;
+                Ok(())
             }
         }
         models::Role::PlayerPong => {
             if n_existing > 1 {
-                debug!("There is too many players, putting into que");
-                put_into_que(message_content, table_name, event, n_existing);
-                Ok(responses::HttpResponse { status_code: 200 })
+                put_into_que(message_content, event, n_existing).await;
+                Ok(())
             } else {
-                let connection = set_role(message_content, table_name.clone(), event.clone());
-                send::inform_server(event, connection.id, table_name, "CONNECTED".to_string()); //TODO: fix this
-                Ok(responses::HttpResponse { status_code: 200 })
+                let admin = connection_operations::find_admin(models::Role::PlayerPong).await?;
+                let connection = set_role(message_content, event.clone()).await;
+                send::inform_server(
+                    event.request_context,
+                    connection.id,
+                    admin.id,
+                    "CONNECTED".to_string(),
+                )
+                .await;
+                Ok(())
             }
         }
-        _ => Ok(responses::HttpResponse { status_code: 200 }),
+        _ => Ok(()),
     }
 }
 
-fn put_into_que(
+async fn put_into_que(
     message_content: SelectionMessage,
-    table_name: String,
-    event: events::Event,
+    event: ApiGatewayWebsocketProxyRequest,
     n_existing: i64,
 ) {
-    let connection = models::Connection {
-        id: event.request_context.connection_id.to_owned(),
-        role: Some(message_content.role),
-        que: true,
-    };
-    let res = DDB.with(|ddb| {
-        ddb.put_item(PutItemInput {
-            table_name: table_name.clone(),
-            item: connection.into(),
-            ..PutItemInput::default()
-        })
-        .sync()
-        .map(drop)
-        .map_err(Error::from)
-    });
+    let connection_id = event
+        .clone()
+        .request_context
+        .connection_id
+        .unwrap_or_default();
+    connection_operations::put_into_que(connection_id, message_content.role).await;
 
-    if let Err(err) = res {
-        error!("There has been an error setting role {}", err);
-    } else {
-        match message_content.role {
-            models::Role::PlayerDisplay => {
-                let mut expression_attribute_names = HashMap::new();
-                expression_attribute_names.insert("#R".to_string(), "role".to_string());
-                expression_attribute_names.insert("#Q".to_string(), "que".to_string());
-                let now = SystemTime::now();
-                let clear_at = now.checked_add(Duration::new(10, 0)).unwrap();
-                let since_the_epoch = clear_at
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards");
-                let res = DDB.with(|ddb| {
-                    ddb.update_item(UpdateItemInput {
-                        table_name: table_name,
-                        expression_attribute_names: Some(expression_attribute_names),
-                        expression_attribute_values: Some(attr_map!(
-                            ":roleval" =>  message_content.role,
-                            ":queval" =>  false,
-                            ":clearAt" => since_the_epoch.as_secs(),
-                        )),
-                        condition_expression: Some("#R = :roleval AND #Q = :queval".into()),
-                        update_expression: Some("SET clearAt = :clearAt".into()),
-                        ..UpdateItemInput::default()
-                    })
-                    .sync()
-                });
-                if let Err(err) = res {
-                    error!("There has been an error setting que ttl {}", err);
-                }
-            }
-            _ => {}
+    match message_content.role {
+        models::Role::PlayerDisplay => {
+            connection_operations::time_out_first_in_que(message_content.role).await;
         }
-        send::put_in_que(event, message_content.role, n_existing);
+        _ => {}
     }
+    send::put_in_que(event.request_context, message_content.role, n_existing).await;
 }
 
-fn set_role(
+async fn set_role(
     message_conent: SelectionMessage,
-    table_name: String,
-    event: events::Event,
+    event: ApiGatewayWebsocketProxyRequest,
 ) -> models::Connection {
     let role = message_conent.role;
+    let connection_id = event
+        .clone()
+        .request_context
+        .connection_id
+        .unwrap_or_default();
+
     let connection = models::Connection {
-        id: event.request_context.connection_id.to_owned(),
+        id: connection_id,
         role: Some(message_conent.role),
         que: false,
     };
-    let return_connection = connection.clone();
-    let res = DDB.with(|ddb| {
-        ddb.put_item(PutItemInput {
-            table_name,
-            item: connection.into(),
-            ..PutItemInput::default()
-        })
-        .sync()
-        .map(drop)
-        .map_err(Error::from)
-    });
 
-    if let Err(err) = res {
-        error!("There has been an error setting role {}", err);
-    } else {
-        send::role_accepted(event.to_owned(), role);
-        if let Ok(admin) = connection_operations::find_admin(message_conent.role) {
+    let res = connection_operations::save_connection(connection.clone()).await;
+
+    if let Ok(con) = res {
+        send::role_accepted(event.request_context.clone(), role).await;
+        if let Ok(admin) = connection_operations::find_admin(message_conent.role).await {
             send::inform_server(
-                event,
-                return_connection.clone().id,
+                event.request_context,
+                con.clone().id,
                 admin.id,
                 "CONNECTED".to_string(),
-            );
+            )
+            .await;
         }
     }
-    return_connection
+
+    connection
 }

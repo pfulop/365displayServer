@@ -1,26 +1,29 @@
 //FROM CLIENT TO SERVER
 
-use common::{connection_operations::*, events::*, responses::*, send::*};
-use dynomite::dynamodb::DynamoDbClient;
-use lambda_runtime::{error::HandlerError, lambda, Context};
-use log::Level;
-use simple_logger;
+use aws_lambda_events::event::apigw::ApiGatewayWebsocketProxyRequest;
+use common::{connection_operations::*, error::Error, models, send};
+use lambda::{lambda, Context};
+use simple_logger::SimpleLogger;
 
-thread_local!(
-    static DDB: DynamoDbClient = DynamoDbClient::new(Default::default());
-);
+#[lambda]
+#[tokio::main]
+async fn main(e: ApiGatewayWebsocketProxyRequest, _: Context) -> Result<(), Error> {
+    SimpleLogger::new().init().unwrap();
 
-fn main() {
-    simple_logger::init_with_level(Level::Info).unwrap();
-    lambda!(handler)
-}
+    let message = e.body.clone().unwrap();
 
-fn handler(event: Event, _: Context) -> Result<HttpResponse, HandlerError> {
-    let message = event.message().clone();
-    let player = find_user(event.request_context.connection_id.clone())?;
-    let admin = find_admin(player.role.unwrap())?;
+    let connection_id = e
+        .clone()
+        .request_context
+        .connection_id
+        .ok_or("Missing Connection ID")?;
+    let unresolved_connection = models::UnresolvedConnection { id: connection_id };
+
+    let player = find_connection_in_db(unresolved_connection).await?;
+    let admin = find_admin(player.role.unwrap()).await?;
     if player.id != admin.id {
-        send(event, admin.id, message);
+        send::send(e.request_context, admin.id, message);
     }
-    return Ok(HttpResponse { status_code: 200 });
+
+    Ok(())
 }
